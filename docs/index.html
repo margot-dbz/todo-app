@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Focus</title>
+  <meta name="theme-color" content="#2d6a4f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Focus">
+  <link rel="apple-touch-icon" href="icons/icon.svg">
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Focus</h1>
+      <span id="task-count" class="count"></span>
+    </header>
+
+    <section id="focus-area"></section>
+
+    <section id="queue-section">
+      <div id="sort-bar" class="sort-bar" style="display:none"></div>
+      <h2 id="queue-label" class="queue-label" style="display:none">Up next</h2>
+      <ul id="queue-list"></ul>
+    </section>
+
+    <form id="add-form">
+      <input id="task-input" type="text" placeholder="What needs to be done?" autocomplete="off" maxlength="200">
+      <button type="submit">Add</button>
+    </form>
+  </div>
+
+  <script src="app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js');
+    }
+  </script>
+</body>
+</html>
