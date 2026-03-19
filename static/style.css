@@ -68,7 +68,19 @@ header h1 {
 }
 
 .focus-card.dragging { opacity: 0.4; }
-.focus-card.drag-over { border-color: var(--accent); }
+
+/* Focus area drop zone — shown when dragging a queue item over it */
+#focus-area.drop-target .focus-card {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(45, 106, 79, 0.15);
+}
+
+#focus-area.drop-target .empty-state {
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius);
+  color: var(--accent);
+  padding: 40px 0;
+}
 
 .focus-drag-handle {
   position: absolute;

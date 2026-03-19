@@ -38,8 +38,8 @@ function render() {
   if (current) {
     const isDraggable = pending.length > 1;
     focusEl.innerHTML = `
-      <div class="focus-card${isDraggable ? " draggable-focus" : ""}" ${isDraggable ? `draggable="true" data-id="${current.id}"` : ""}>
-        ${isDraggable ? `<span class="focus-drag-handle" title="Drag to reorder">⠿</span>` : ""}
+      <div class="focus-card" ${isDraggable ? `draggable="true" data-id="${current.id}"` : ""}>
+        ${isDraggable ? `<span class="focus-drag-handle" title="Drag to send to queue">⠿</span>` : ""}
         <p class="task-text">${escapeHtml(current.text)}</p>
         <div class="focus-actions">
           <button class="btn-done" data-id="${current.id}">Done</button>
@@ -49,8 +49,20 @@ function render() {
       </div>`;
     focusEl.querySelector(".btn-done").addEventListener("click", () => completeTask(current.id));
     focusEl.querySelector(".btn-delete").addEventListener("click", () => deleteTask(current.id));
-    if (isDraggable) focusEl.querySelector(".btn-skip").addEventListener("click", () => skipTask(current.id));
-    if (isDraggable) attachDragListeners(focusEl.querySelector(".focus-card"));
+    if (isDraggable) {
+      focusEl.querySelector(".btn-skip").addEventListener("click", () => skipTask(current.id));
+      const card = focusEl.querySelector(".focus-card");
+      card.addEventListener("dragstart", (e) => {
+        dragSrcId = current.id;
+        card.classList.add("dragging");
+        e.dataTransfer.effectAllowed = "move";
+      });
+      card.addEventListener("dragend", () => {
+        card.classList.remove("dragging");
+        dragSrcId = null;
+        document.querySelectorAll(".drag-over").forEach(el => el.classList.remove("drag-over"));
+      });
+    }
   } else {
     focusEl.innerHTML = `
       <div class="empty-state">
@@ -87,15 +99,94 @@ function render() {
   queueList.querySelectorAll(".queue-delete").forEach(btn =>
     btn.addEventListener("click", () => deleteTask(btn.dataset.id))
   );
-  queueList.querySelectorAll(".queue-item").forEach(item => attachDragListeners(item));
+  queueList.querySelectorAll(".queue-item").forEach(item => {
+    item.addEventListener("dragstart", onQueueDragStart);
+    item.addEventListener("dragover", onQueueDragOver);
+    item.addEventListener("dragleave", onQueueDragLeave);
+    item.addEventListener("drop", onQueueDrop);
+    item.addEventListener("dragend", onQueueDragEnd);
+  });
 }
 
-function attachDragListeners(el) {
-  el.addEventListener("dragstart", onDragStart);
-  el.addEventListener("dragover", onDragOver);
-  el.addEventListener("dragleave", onDragLeave);
-  el.addEventListener("drop", onDrop);
-  el.addEventListener("dragend", onDragEnd);
+// Focus area drop zone — lights up when dragging a queue item over it
+const focusArea = document.getElementById("focus-area");
+let focusDragCounter = 0; // track nested dragenter/dragleave
+
+focusArea.addEventListener("dragenter", (e) => {
+  const pending = sortedPending();
+  if (!dragSrcId || dragSrcId === pending[0]?.id) return; // ignore focus card dragging itself
+  focusDragCounter++;
+  focusArea.classList.add("drop-target");
+});
+
+focusArea.addEventListener("dragleave", () => {
+  focusDragCounter--;
+  if (focusDragCounter <= 0) {
+    focusDragCounter = 0;
+    focusArea.classList.remove("drop-target");
+  }
+});
+
+focusArea.addEventListener("dragover", (e) => {
+  const pending = sortedPending();
+  if (!dragSrcId || dragSrcId === pending[0]?.id) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = "move";
+});
+
+focusArea.addEventListener("drop", async (e) => {
+  e.preventDefault();
+  focusDragCounter = 0;
+  focusArea.classList.remove("drop-target");
+  const pending = sortedPending();
+  if (!dragSrcId || dragSrcId === pending[0]?.id) return;
+  await promoteTask(dragSrcId);
+});
+
+// Queue drag handlers
+function onQueueDragStart(e) {
+  dragSrcId = this.dataset.id;
+  this.classList.add("dragging");
+  e.dataTransfer.effectAllowed = "move";
+}
+
+function onQueueDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = "move";
+  document.querySelectorAll(".queue-item").forEach(el => el.classList.remove("drag-over"));
+  if (this.dataset.id !== dragSrcId) this.classList.add("drag-over");
+}
+
+function onQueueDragLeave() {
+  this.classList.remove("drag-over");
+}
+
+async function onQueueDrop(e) {
+  e.preventDefault();
+  if (this.dataset.id === dragSrcId) return;
+
+  const pending = sortedPending();
+  const srcIdx = pending.findIndex(t => t.id === dragSrcId);
+  const dstIdx = pending.findIndex(t => t.id === this.dataset.id);
+  if (srcIdx === -1 || dstIdx === -1) return;
+
+  pending.splice(dstIdx, 0, pending.splice(srcIdx, 1)[0]);
+  currentSort = "manual";
+  await fetch("/api/tasks/reorder", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids: pending.map(t => t.id) }),
+  });
+  fetchTasks();
+}
+
+function onQueueDragEnd() {
+  dragSrcId = null;
+  document.querySelectorAll(".queue-item, .focus-card").forEach(el => {
+    el.classList.remove("dragging", "drag-over");
+  });
+  focusDragCounter = 0;
+  focusArea.classList.remove("drop-target");
 }
 
 async function applySort(sortKey) {
@@ -107,49 +198,6 @@ async function applySort(sortKey) {
     body: JSON.stringify({ ids: ordered.map(t => t.id) }),
   });
   fetchTasks();
-}
-
-function onDragStart(e) {
-  dragSrcId = this.dataset.id;
-  this.classList.add("dragging");
-  e.dataTransfer.effectAllowed = "move";
-}
-
-function onDragOver(e) {
-  e.preventDefault();
-  e.dataTransfer.dropEffect = "move";
-  document.querySelectorAll(".queue-item, .focus-card").forEach(el => el.classList.remove("drag-over"));
-  if (this.dataset.id !== dragSrcId) this.classList.add("drag-over");
-}
-
-function onDragLeave() {
-  this.classList.remove("drag-over");
-}
-
-async function onDrop(e) {
-  e.preventDefault();
-  if (this.dataset.id === dragSrcId) return;
-
-  const pending = sortedPending();
-  const srcIdx = pending.findIndex(t => t.id === dragSrcId);
-  const dstIdx = pending.findIndex(t => t.id === this.dataset.id);
-  if (srcIdx === -1 || dstIdx === -1) return;
-
-  pending.splice(dstIdx, 0, pending.splice(srcIdx, 1)[0]);
-
-  currentSort = "manual";
-  await fetch("/api/tasks/reorder", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ids: pending.map(t => t.id) }),
-  });
-  fetchTasks();
-}
-
-function onDragEnd() {
-  document.querySelectorAll(".queue-item, .focus-card").forEach(el => {
-    el.classList.remove("dragging", "drag-over");
-  });
 }
 
 async function skipTask(id) {
